@@ -139,8 +139,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
     static const INT SNAP_X = 100;
     static const INT SNAP_Y = 100;
-    static INT nCursorFromEdge = 0;
+    static POINT ptfe = { 0 };
     static POINT ptcs = { 0 };
+    static RECT rcsz = { 0 };
     static RECT rcwa = { 0 };
     static BOOL bSnap = FALSE;
     static INT nSnapOffset = 0;
@@ -179,16 +180,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             RECT rc = { 0 };
             ::GetWindowRect(hWnd, &rc);
 
-            nCursorFromEdge = ptcs.x - rc.left;
-            ATLTRACE(_T("nCursorFromEdge = %d\n"), nCursorFromEdge);
+            ptfe.x = ptcs.x - rc.left;
 
-            DefWindowProc(hWnd, message, wParam, lParam);
+            return DefWindowProc(hWnd, message, wParam, lParam);
         }
         break;
     case WM_ENTERSIZEMOVE:
         {
             ::SystemParametersInfo(SPI_GETWORKAREA, 0, &rcwa, 0);
-            //ATLTRACE(_T("%ld, %ld, %ld, %ld\n"), rcwa.left, rcwa.top, rcwa.right, rcwa.bottom);
+            ::CopyRect(&rcsz, &rcwa);
+            rcsz.left = 100;
         }
         break;
     case WM_EXITSIZEMOVE:
@@ -197,25 +198,28 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     case WM_MOVING:
         {
             LPRECT lprc = (LPRECT)lParam;
-            //ATLTRACE(_T("RC: %ld, %ld, %ld, %ld\n"), lprc->left, lprc->top, lprc->right, lprc->bottom);
 
-            if (!bSnap && lprc->left < SNAP_X)
-            {
+            // Snap zone
+            if (!bSnap && lprc->left < SNAP_X + rcsz.left)
                 bSnap = TRUE;
-            }
 
+            // Snapping
             if (bSnap)
             {
                 POINT pt = { 0 };
                 ::GetCursorPos(&pt);
 
-                if (pt.x - nCursorFromEdge > SNAP_X)
+                // Unsnap
+                if (pt.x - ptfe.x >= SNAP_X + rcsz.left)
                 {
+                    ::OffsetRect(lprc, pt.x - ptfe.x - lprc->left, 0);
                     bSnap = FALSE;
-                    ::OffsetRect(lprc, pt.x - nCursorFromEdge - lprc->left, 0);
                 }
+                // Snap
                 else
-                    ::OffsetRect(lprc, -lprc->left, 0);
+                {
+                    ::OffsetRect(lprc, -lprc->left + rcsz.left, 0);
+                }
             }
         }
         break;
