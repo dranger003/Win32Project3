@@ -121,6 +121,64 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
    return TRUE;
 }
 
+BOOL SnapUnsnapRect(
+    PRECT prc,      // Window
+    PPOINT ppt,     // Cursor
+    PRECT prcce,    // Cursor to window edge
+    PRECT prcst,    // Snap to
+    PRECT prcsr     // Snap range
+)
+{
+    BOOL bRes = FALSE;
+
+    // Left
+    if (prc->left < prcst->left + prcsr->left)
+    {
+        // Unsnap
+        if (ppt->x + prcce->left >= prcst->left + prcsr->left)
+            ::OffsetRect(prc, ppt->x + prcce->left - prc->left, 0);
+        else // Snap
+            ::OffsetRect(prc, -prc->left + prcst->left, 0);
+
+        bRes = TRUE;
+    }
+
+    // Top
+    if (prc->top < prcst->top + prcsr->top)
+    {
+        if (ppt->y + prcce->top >= prcst->top + prcsr->top)
+            ::OffsetRect(prc, 0, ppt->y + prcce->top - prc->top);
+        else
+            ::OffsetRect(prc, 0, -prc->top + prcst->top);
+
+        bRes = TRUE;
+    }
+
+    // Right
+    if (prc->right > prcst->right - prcsr->right)
+    {
+        if (ppt->x + prcce->right <= prcst->right - prcsr->right)
+            ::OffsetRect(prc, -prc->right + ppt->x + prcce->right, 0);
+        else
+            ::OffsetRect(prc, prcst->right - prc->right, 0);
+
+        bRes = TRUE;
+    }
+
+    // Bottom
+    if (prc->bottom > prcst->bottom - prcsr->bottom)
+    {
+        if (ppt->y + prcce->bottom <= prcst->bottom - prcsr->bottom)
+            ::OffsetRect(prc, 0, -prc->bottom + ppt->y + prcce->bottom);
+        else
+            ::OffsetRect(prc, 0, prcst->bottom - prc->bottom);
+
+        bRes = TRUE;
+    }
+
+    return bRes;
+}
+
 //
 //  FUNCTION: WndProc(HWND, UINT, WPARAM, LPARAM)
 //
@@ -137,14 +195,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	PAINTSTRUCT ps;
 	HDC hdc;
 
-    static const INT SNAP_X = 100;
-    static const INT SNAP_Y = 100;
-    static POINT ptfe = { 0 };
-    static POINT ptcs = { 0 };
+    static RECT rcce = { 0 };
     static RECT rcsz = { 0 };
-    static RECT rcwa = { 0 };
-    static BOOL bSnap = FALSE;
-    static INT nSnapOffset = 0;
+    static RECT rcsd = { 200, 200, 200, 200 };
 
     switch (message)
 	{
@@ -174,53 +227,38 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		break;
     case WM_NCLBUTTONDOWN:
         {
-            ptcs.x = GET_X_LPARAM(lParam);
-            ptcs.y = GET_Y_LPARAM(lParam);
+            POINT pt = { 0 };
+            pt.x = GET_X_LPARAM(lParam);
+            pt.y = GET_Y_LPARAM(lParam);
 
             RECT rc = { 0 };
             ::GetWindowRect(hWnd, &rc);
 
-            ptfe.x = ptcs.x - rc.left;
+            // Cursor to edge
+            rcce.left = rc.left - pt.x;
+            rcce.top = rc.top - pt.y;
+            rcce.right = rc.right - pt.x;
+            rcce.bottom = rc.bottom - pt.y;
 
             return DefWindowProc(hWnd, message, wParam, lParam);
         }
         break;
     case WM_ENTERSIZEMOVE:
         {
-            ::SystemParametersInfo(SPI_GETWORKAREA, 0, &rcwa, 0);
-            ::CopyRect(&rcsz, &rcwa);
-            rcsz.left = 100;
+            // Snap zone = Work area
+            ::SystemParametersInfo(SPI_GETWORKAREA, 0, &rcsz, 0);
         }
         break;
     case WM_EXITSIZEMOVE:
-        bSnap = FALSE;
         break;
     case WM_MOVING:
         {
             LPRECT lprc = (LPRECT)lParam;
 
-            // Snap zone
-            if (!bSnap && lprc->left < SNAP_X + rcsz.left)
-                bSnap = TRUE;
+            POINT pt = { 0 };
+            ::GetCursorPos(&pt);
 
-            // Snapping
-            if (bSnap)
-            {
-                POINT pt = { 0 };
-                ::GetCursorPos(&pt);
-
-                // Unsnap
-                if (pt.x - ptfe.x >= SNAP_X + rcsz.left)
-                {
-                    ::OffsetRect(lprc, pt.x - ptfe.x - lprc->left, 0);
-                    bSnap = FALSE;
-                }
-                // Snap
-                else
-                {
-                    ::OffsetRect(lprc, -lprc->left + rcsz.left, 0);
-                }
-            }
+            ::SnapUnsnapRect(lprc, &pt, &rcce, &rcsz, &rcsd);
         }
         break;
 	default:
